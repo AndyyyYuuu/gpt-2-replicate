@@ -82,5 +82,5 @@ for steps in range(10000):
     loss.backward()
     optimizer.step()
 
-print(decode(lm.generate(idx, max_new_tokens=500)[0].tolist()))
+print(decode(lm.generate(idx, max_new_tokens=1000)[0].tolist()))
 

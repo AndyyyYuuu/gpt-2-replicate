@@ -5,6 +5,8 @@ from torch.nn import functional as F
 n_embed = 32
 block_size = 8
 n_heads = 4
+n_layers = 3
+dropout = 0.2
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -15,11 +17,8 @@ class BigramLM(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.blocks = nn.Sequential(
-            Block(n_embed, n_heads),
-            Block(n_embed, n_heads),
-            Block(n_embed, n_heads)
-        )
+        self.blocks = nn.Sequential(*[Block(n_embed, n_heads) for _ in range(n_layers)])
+        self.ln_f = nn.LayerNorm(n_embed)
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
 
@@ -30,6 +29,7 @@ class BigramLM(nn.Module):
         pos_emb = self.position_embedding_table(torch.arange(T, device=device))  # (T, C)
         x = token_emb + pos_emb  # (B, T, C)
         x = self.blocks(x)
+        x = self.ln_f(x)
         logits = self.lm_head(x)  # (batch size, time, vocab size)
         if targets is None:
             return logits, None
@@ -59,10 +59,12 @@ class Block(nn.Module):
         super().__init__()
         self.sa_head = MultiHeadAttention(n_heads, n_embed // n_heads)
         self.ff = FeedForward(n_embed)
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
 
     def forward(self, x):
-        x = x + self.sa_head(x)
-        x = x + self.ff(x)
+        x = x + self.sa_head(self.ln1(x))
+        x = x + self.ff(self.ln2(x))
         return x
 
 
@@ -74,6 +76,7 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embed, head_size, bias=False)
         self.value = nn.Linear(n_embed, head_size, bias=False)
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         B, T, C = x.shape
@@ -82,6 +85,7 @@ class Head(nn.Module):
         weights = q @ k.transpose(-2, -1) * C**-0.5
         weights = weights.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         weights = F.softmax(weights, dim=-1)
+        weights = self.dropout(weights)
         v = self.value(x)
         out = weights @ v
         return out
@@ -94,7 +98,8 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(n_embed, 4 * n_embed),
             nn.ReLU(),
-            nn.Linear(4 * n_embed, n_embed)
+            nn.Linear(4 * n_embed, n_embed),
+            nn.Dropout(dropout)
         )
 
     def forward(self, x):
@@ -108,9 +113,10 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
         self.proj = nn.Linear(n_embed, n_embed)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.proj(out)
+        out = self.dropout(self.proj(out))
         return out
 
