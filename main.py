@@ -3,7 +3,10 @@ import model
 
 block_size = 8
 batch_size = 32
+max_iters = 5000
 learning_rate = 1e-2
+eval_iters = 200
+eval_interval = 250
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 torch.manual_seed(69420)
@@ -42,10 +45,24 @@ def get_batch(split):
     return x, y
 
 
+@torch.no_grad()
+def estimate_loss():
+    out = {}
+    lm.eval()
+    for split in ["train", "valid"]:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            X, Y = get_batch(split)
+            logits, loss = lm(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    lm.train()
+    return out
+
 
 xb, yb = get_batch("train")
 
-lm = model.BigramLM(vocab_size).to_device()
+lm = model.BigramLM(vocab_size).to(device)
 logits, loss = lm(xb, yb)
 print(logits.shape)
 
@@ -55,12 +72,15 @@ idx = torch.zeros((1, 1), dtype=torch.long)
 optimizer = torch.optim.AdamW(lm.parameters(), lr=learning_rate)
 
 for steps in range(10000):
+    if steps % eval_interval == 0:
+        losses = estimate_loss()
+        print(f"Step {steps}: Train loss: {losses['train']}, Valid loss: {losses['valid']}")
     xb, yb = get_batch("train")
 
     logits, loss = lm(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
-    print(loss.item())
 
 print(decode(lm.generate(idx, max_new_tokens=500)[0].tolist()))
+
