@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 n_embed = 32
 block_size = 8
-n_heads = 6
+n_heads = 4
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -15,8 +15,13 @@ class BigramLM(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_head = MultiHeadAttention(4, n_embed//4)
+        self.blocks = nn.Sequential(
+            Block(n_embed, n_heads),
+            Block(n_embed, n_heads),
+            Block(n_embed, n_heads)
+        )
         self.lm_head = nn.Linear(n_embed, vocab_size)
+
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
@@ -24,7 +29,7 @@ class BigramLM(nn.Module):
         token_emb = self.token_embedding_table(idx)  # (batch size, time (block size), embedding size)
         pos_emb = self.position_embedding_table(torch.arange(T, device=device))  # (T, C)
         x = token_emb + pos_emb  # (B, T, C)
-        x = self.sa_head(x)
+        x = self.blocks(x)
         logits = self.lm_head(x)  # (batch size, time, vocab size)
         if targets is None:
             return logits, None
@@ -48,6 +53,19 @@ class BigramLM(nn.Module):
         return idx
 
 
+class Block(nn.Module):
+
+    def __init__(self, n_embed, n_heads):
+        super().__init__()
+        self.sa_head = MultiHeadAttention(n_heads, n_embed // n_heads)
+        self.ff = FeedForward(n_embed)
+
+    def forward(self, x):
+        x = x + self.sa_head(x)
+        x = x + self.ff(x)
+        return x
+
+
 class Head(nn.Module):
 
     def __init__(self, head_size):
@@ -69,12 +87,30 @@ class Head(nn.Module):
         return out
 
 
+class FeedForward(nn.Module):
+
+    def __init__(self, n_embed):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embed, 4 * n_embed),
+            nn.ReLU(),
+            nn.Linear(4 * n_embed, n_embed)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class MultiHeadAttention(nn.Module):
 
 
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.proj = nn.Linear(n_embed, n_embed)
 
     def forward(self, x):
-        return torch.cat([h(x) for h in self.heads], dim=-1)
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.proj(out)
+        return out
+
