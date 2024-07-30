@@ -1,17 +1,12 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-
-n_embed = 32
-block_size = 8
-n_heads = 4
-n_layers = 3
-dropout = 0.2
+from config import *
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-class BigramLM(nn.Module):
+class GPT(nn.Module):
 
     def __init__(self, vocab_size):
         super().__init__()

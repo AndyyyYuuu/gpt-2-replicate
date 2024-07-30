@@ -1,12 +1,8 @@
 import torch
 import model
+from config import *
 
-block_size = 8
-batch_size = 32
-max_iters = 5000
-learning_rate = 1e-2
-eval_iters = 200
-eval_interval = 250
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 torch.manual_seed(69420)
@@ -49,6 +45,7 @@ def get_batch(split):
 def estimate_loss():
     out = {}
     lm.eval()
+
     for split in ["train", "valid"]:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
@@ -62,7 +59,7 @@ def estimate_loss():
 
 xb, yb = get_batch("train")
 
-lm = model.BigramLM(vocab_size).to(device)
+lm = model.GPT(vocab_size).to(device)
 logits, loss = lm(xb, yb)
 print(logits.shape)
 
