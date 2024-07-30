@@ -72,6 +72,7 @@ for steps in range(10000):
     if steps % eval_interval == 0:
         losses = estimate_loss()
         print(f"Step {steps}: Train loss: {losses['train']}, Valid loss: {losses['valid']}")
+        torch.save([lm.state_dict(), chars], save_path)
     xb, yb = get_batch("train")
 
     logits, loss = lm(xb, yb)
@@ -80,4 +81,4 @@ for steps in range(10000):
     optimizer.step()
 
 print(decode(lm.generate(idx, max_new_tokens=1000)[0].tolist()))
-
+torch.save([lm.state_dict(), chars], save_path)
